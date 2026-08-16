@@ -96,9 +96,10 @@ An AI-powered Node.js/Express application for autonomous blog post generation, o
 >
 > **Health check:** the server binds `0.0.0.0:$PORT` and serves `GET /healthz` **before** the
 > database connects, so a bad/missing `MONGODB_URI` no longer crash-loops the deploy — it shows
-> up as `dbState: 0` in the health payload and a `503` on `/admin`. The app then **retries
-> MongoDB automatically** (fast retries at startup, then every 60s in the background), so once
-> `MONGODB_URI` / Atlas network access is fixed it connects without a redeploy.
+> up as `dbState: 0` in the health payload, and `/admin` redirects to the in-app Database Setup
+> page (`/setup`). The app then **retries MongoDB automatically** (fast retries at startup, then
+> every 60s in the background), so once `MONGODB_URI` / Atlas network access is fixed it
+> connects without a redeploy.
 >
 > **Scheduling:** an internal hourly `node-cron` tick (`services/schedulerService.js`) runs the
 > pipeline whenever `frequencyHours` has elapsed. On Render's free tier the instance sleeps, so
@@ -131,6 +132,29 @@ If you don't want to touch Render's dashboard, the app includes an in-app
 3. The app saves it locally (git-ignored), masks it everywhere it is displayed
    (`user:***@host`), and reconnects automatically with the background retry loop.
 
+**Access rule:** while the database is not configured/reachable, `/admin` (and
+the app's homepage) redirect to `/setup` — you cannot open the admin panel
+until MongoDB connects, but you can always configure MongoDB itself.
+
+#### How to get the MongoDB credentials (free)
+
+The `/setup` page contains this guide too, in full. Short version:
+
+1. **Account:** sign up at <https://www.mongodb.com/cloud/atlas/register> (free).
+2. **Cluster:** *Build a Database* → free **M0** plan (Shared) → any region → *Create* (takes 1–3 min).
+3. **User:** *Database Access* → *Add New Database User* → *Password* auth → save the username & password.
+4. **Network access:** *Network Access* → *Add IP Address* → *Allow access from anywhere*
+   (`0.0.0.0/0`) → *Confirm* (the app's servers use changing IPs).
+5. **Connection string:** *Database* → your cluster → *Connect* → *Drivers* → *Node.js* →
+   copy the `mongodb+srv://...` string.
+6. **Password:** replace `<password>` in the string with your user's password; URL-encode
+   special characters (`@` → `%40`, `:` → `%3A`, `/` → `%2F`, `#` → `%23`, `?` → `%3F`).
+7. **Paste & connect:** paste the finished string on `/setup` and click *Save & Connect*.
+
+Common errors: `Authentication failed` = wrong user/password; `querySrv ENOTFOUND` = wrong
+hostname or cluster still creating; `not authorized` = network access missing; `timed out` =
+temporary, the app retries automatically.
+
 Notes:
 - The in-app saved string **takes precedence** over the `MONGODB_URI` env var
   while it exists. Use the **Remove Saved Connection** button to fall back to
@@ -146,8 +170,9 @@ Notes:
 ### Troubleshooting: "Database unavailable" after a successful deploy
 
 The server intentionally starts before MongoDB connects, so a deploy can be marked
-**live** while the database is still unreachable — `/admin` then returns `503` with that
-message. Check the following in order:
+**live** while the database is still unreachable — opening `/admin` (or the homepage)
+redirects to the **Database Setup** page (`/setup`), where you can add the credentials
+and follow the step-by-step instructions. Check the following in order:
 
 1.  **Is `MONGODB_URI` actually set on Render?** Open your service → **Environment** in the
     Render dashboard. The blueprint (`render.yaml`) declares the variable but with

@@ -37,26 +37,16 @@ function withDefaults(settings) {
 }
 
 const isAuthenticated = async (req, res, next) => {
-    // Fail fast (and readably) when the database is unreachable instead of
-    // letting every query hang on Mongoose's 10s command buffer.
+    // The admin panel needs the database, but the database may not be
+    // configured yet. Instead of failing, send the user to the in-app
+    // Database Setup page where they can paste their MongoDB connection
+    // string (that page works without the DB).
     if (mongoose.connection.readyState !== 1) {
         const db = getDbStatus();
-        let hint;
-        if (!db.uriSet) {
-            hint =
-                'No connection string is configured. Paste your MongoDB Atlas connection string on the in-app Database Setup page (https://' +
-                req.get('host') +
-                '/setup), or set MONGODB_URI in the Render dashboard (Service → Environment).';
-        } else if (db.lastError) {
-            hint =
-                `Last MongoDB error: ${db.lastError}. ` +
-                'Check that the connection string credentials are correct and that this host is allowed in your MongoDB Atlas network access list (add 0.0.0.0/0 to allow any host). ' +
-                'You can update the connection string on the Database Setup page (/setup). ' +
-                'The app keeps retrying automatically — no redeploy needed once it is fixed.';
-        } else {
-            hint = 'MongoDB is still connecting — the app retries automatically.';
-        }
-        return res.status(503).send(`Database unavailable. ${hint}`);
+        console.error(
+            `Admin access blocked: MongoDB not connected (${db.lastError || 'no connection string configured'}). Redirecting to /setup.`
+        );
+        return res.redirect('/setup');
     }
 
     try {
