@@ -1,7 +1,7 @@
 // services/seoService.js
 const { ExecutionLog, ArticleIndex } = require('../db');
 const { makeApiRequest, logExecution, sendTelegramAlert } = require('./apiService');
-const slugify = require('slugify'); // For generating URL-friendly slugs
+const slugify = require('../utils/slugify'); // Dependency-free slug generator
 
 // Placeholder for semantic search of existing articles
 async function findRelatedArticles(querySummary, currentBlogId, limit = 3) {
@@ -42,7 +42,7 @@ function injectPpcLinks(htmlContent, ppcLinks) {
 
     // Simple strategy: inject links into some paragraphs
     // More sophisticated: analyze text for optimal insertion points
-    const insertionPoints = Math.floor(paragraphs.length / (linkCount + 1)); // Distribute links
+    const insertionPoints = Math.max(1, Math.floor(paragraphs.length / (linkCount + 1))); // Distribute links (never 0 -> avoids % 0 = NaN)
 
     let linkIndex = 0;
     const newParagraphs = [];
@@ -75,7 +75,9 @@ function injectPpcLinks(htmlContent, ppcLinks) {
 
 async function optimizeContent(generatedArticleData, settings, bloggerClient) {
     let { title, htmlContent, metaDescription, tags, contentSummary } = generatedArticleData;
-    const { selectedBlogId, seoKeywords, ppcTargetLinks } = settings;
+    const selectedBlogId = settings.selectedBlogId;
+    const seoKeywords = Array.isArray(settings.seoKeywords) ? settings.seoKeywords : [];
+    const ppcTargetLinks = Array.isArray(settings.ppcTargetLinks) ? settings.ppcTargetLinks : [];
 
     let optimizedHtmlContent = htmlContent;
 
@@ -95,7 +97,7 @@ async function optimizeContent(generatedArticleData, settings, bloggerClient) {
 
     if (!finalMetaDescription) {
         // Generate meta description from content summary and keywords
-        finalMetaDescription = `${contentSummary.substring(0, 120)}... Keywords: ${seoKeywords.join(', ')}`;
+        finalMetaDescription = `${(contentSummary || title).substring(0, 120)}... Keywords: ${seoKeywords.join(', ')}`;
         console.log('Generated meta description.');
     }
     if (!finalTags || finalTags.length === 0) {

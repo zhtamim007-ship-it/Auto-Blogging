@@ -2,7 +2,7 @@
 const { google } = require('googleapis');
 const { Settings, AuthToken, ArticleIndex } = require('../db');
 const apiConfig = require('../config/apiConfig');
-const { makeApiRequest, logExecution } = require('./apiService');
+const { logExecution, isTokenExpiring } = require('./apiService');
 const { v4: uuidv4 } = require('uuid');
 
 // Helper to get authenticated blogger client
@@ -22,7 +22,7 @@ async function getAuthenticatedBloggerClient() {
         });
 
         // Refresh token if it's expiring soon
-        if (googleAuth.oauth2Client.isTokenExpiring()) {
+        if (isTokenExpiring(googleAuth.oauth2Client)) {
             console.log('BloggerService: Token is expiring, refreshing...');
             try {
                 const { credentials } = await googleAuth.oauth2Client.refreshAccessToken();
@@ -52,28 +52,19 @@ async function getAuthenticatedBloggerClient() {
 async function listUserBlogs() {
     try {
         const blogger = await getAuthenticatedBloggerClient();
-        const response = await makeApiRequest({
-            apiName: 'Blogger',
-            action: 'List Blogs',
-            method: 'GET',
-            // googleapis library handles auth, so direct method call is fine
-            // The makeApiRequest wrapper is more for external HTTP APIs
-            // For googleapis, we might call directly and handle errors manually,
-            // or wrap the specific googleapis call within makeApiRequest if it uses standard HTTP interfaces.
-            // For now, direct call to googleapis method:
-            requestFn: () => blogger.blogs.listByUser({ userId: 'me' }),
-            logSuccess: false // Don't log every blog list, usually too verbose
-        });
+        // googleapis handles auth/retries itself — the generic HTTP wrapper does not
+        // apply here, so we call the client directly.
+        const response = await blogger.blogs.listByUser({ userId: 'me' });
         return response.data.items || [];
     } catch (error) {
-        console.error('BloggerService: Failed to list blogs:', error);
-        await logExecution('FAILED', 'List Blogs', `Failed to list user blogs: ${error.message}`, null, { error: error.message, stack: error.stack });
+        console.error('BloggerService: Failed to list blogs:', error.message);
+        await logExecution('FAILED', 'List Blogs', `Failed to list user blogs: ${error.message}`, null, { error: error.message });
         throw error;
     }
 }
 
 // Insert a new blog post
-async function insertPost(settings, postContent, postId) {
+async function insertPost(settings, postContent) {
     const { selectedBlogId } = settings;
     if (!selectedBlogId) {
         throw new Error('No blog selected. Cannot insert post.');
@@ -82,13 +73,14 @@ async function insertPost(settings, postContent, postId) {
     try {
         const blogger = await getAuthenticatedBloggerClient();
         
+        const isDraft = settings.publishingMode !== 'Direct';
+
         const postData = {
             kind: 'blogger#post',
             blog: { id: selectedBlogId },
             title: postContent.title,
             content: postContent.htmlContent,
-            labels: postContent.tags,
-            publication: settings.publishingMode === 'Direct' ? 'PUBLISH' : 'DRAFT',
+            labels: Array.isArray(postContent.tags) ? postContent.tags : [],
             // For featured image, Blogger API doesn't directly support adding featured image via post insert.
             // It's usually done manually or via JSON-RPC/specific UI actions.
             // We'll inject it as an <img> tag within the content for now.
@@ -97,7 +89,10 @@ async function insertPost(settings, postContent, postId) {
         console.log(`Inserting post into blog ID: ${selectedBlogId}`);
         const response = await blogger.posts.insert({
             blogId: selectedBlogId,
-            resource: postData,
+            // Blogger v3 controls draft vs. published with the `isDraft` query
+            // parameter — there is no `publication` field on the resource.
+            isDraft,
+            requestBody: postData,
         });
 
         const publishedUrl = response.data.url;
@@ -110,7 +105,7 @@ async function insertPost(settings, postContent, postId) {
             slug: postContent.slug,
             contentSummary: postContent.contentSummary,
             tags: postContent.tags,
-            publishedAt: new Date(response.data.published),
+            publishedAt: response.data.published ? new Date(response.data.published) : new Date(),
             blogId: selectedBlogId,
             postId: postId, // Store post ID as well if useful
         });

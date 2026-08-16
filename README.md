@@ -91,6 +91,19 @@ An AI-powered Node.js/Express application for autonomous blog post generation, o
 
 ### 3. Deployment to Render
 
+> A ready-to-use `render.yaml` blueprint is included (build `npm install`, start `npm start`,
+> health check `/healthz`). Add the secret env vars in the Render dashboard.
+>
+> **Health check:** the server binds `0.0.0.0:$PORT` and serves `GET /healthz` **before** the
+> database connects, so a bad/missing `MONGODB_URI` no longer crash-loops the deploy — it shows
+> up as `dbState: 0` in the health payload and a `503` on `/admin`.
+>
+> **Scheduling:** an internal hourly `node-cron` tick (`services/schedulerService.js`) runs the
+> pipeline whenever `frequencyHours` has elapsed. On Render's free tier the instance sleeps, so
+> also keep an external cron hitting `/api/trigger-autopost` (set `DISABLE_SCHEDULER=true` if you
+> want the external trigger to be the only one).
+
+
 1.  **Sign up for Render:** [https://render.com/](https://render.com/)
 2.  **Create a new Web Service:**
     *   Connect your Git repository.
@@ -157,3 +170,25 @@ An AI-powered Node.js/Express application for autonomous blog post generation, o
 *   Tailwind CSS is assumed for styling `admin.ejs`, but the setup for its compilation/inclusion is outside the scope of this code generation and would need to be handled in the `public/css` directory. Basic inline styles are provided for immediate use.
 
 This comprehensive solution provides the structure, logic, and configuration necessary to build the "Blogger Autonomous AI Powerhouse."
+
+## Troubleshooting / Fixes applied
+
+The Render build (`yarn install`) succeeded while the app still failed to start. The build step
+only installs dependencies — it never parses the source — so these runtime faults were invisible
+until boot:
+
+| Problem | Fix |
+| --- | --- |
+| `server.js` had escaped backticks (`` \` ``) inside template literals → `SyntaxError: Invalid or unexpected token` | Rewrote the template literals |
+| `routes/admin.js` began with leftover chat/tool-call text → `SyntaxError: Unexpected identifier 'path'` | Stripped the artifact, kept the real module |
+| `services/seoService.js` required `slugify`, which is not in `package.json` → `MODULE_NOT_FOUND` | Added dependency-free `utils/slugify.js` |
+| `db.js` called `process.exit(1)` when `MONGODB_URI` was missing → instant crash loop | Server boots first, DB connects after, errors are logged |
+| `routes/api.js` used `logExecution` without importing it → `ReferenceError` | Added the import |
+| `services/apiService.js` referenced an undefined `googleAuth` and an out-of-scope `currentUrl` in its catch block | Imported `googleAuth`, hoisted `currentUrl` |
+| `oauth2Client.isTokenExpiring()` is a non-public helper missing in some versions | Added a safe `isTokenExpiring()` wrapper used everywhere |
+| `googleAuth.getToken()` returns tokens, but `routes/auth.js` destructured `{ tokens }` → tokens saved as `undefined` | Fixed destructuring; refresh token is preserved on re-consent |
+| Blogger insert used a non-existent `publication` field and `resource` | Uses `isDraft` + `requestBody` per Blogger API v3 |
+| `bloggerService.listUserBlogs()` passed an unsupported `requestFn` to the HTTP wrapper | Calls the googleapis client directly |
+| `geminiService` called `apiKeyService.toggleKeyStatusForRateLimit()`, which did not exist | Implemented it |
+| `views/admin.ejs` referenced undefined `blogSelectionMessage`, `apiConfig.image.apiKey`, posted to a non-existent `/admin/resync-blogs`, and crashed on `settings.seoKeywords.join` | All fixed; settings are normalised with defaults |
+| No health endpoint, no graceful shutdown, no internal scheduler | Added `/healthz`, SIGTERM handling, and `services/schedulerService.js` |

@@ -6,6 +6,7 @@ const pipelineService = require('../services/pipelineService');
 const apiConfig = require('../config/apiConfig');
 const { google } = require('googleapis');
 const googleAuth = require('../config/googleAuth');
+const { logExecution, isTokenExpiring } = require('../services/apiService');
 
 // Endpoint to be triggered by external cron jobs
 router.get('/trigger-autopost', async (req, res) => {
@@ -38,7 +39,7 @@ router.get('/trigger-autopost', async (req, res) => {
         });
 
         // Refresh token if it's expiring soon
-        if (googleAuth.oauth2Client.isTokenExpiring()) {
+        if (isTokenExpiring(googleAuth.oauth2Client)) {
             console.log('Token is expiring, refreshing...');
             try {
                 const { credentials } = await googleAuth.oauth2Client.refreshAccessToken();
