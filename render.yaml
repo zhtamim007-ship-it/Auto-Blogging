@@ -11,6 +11,9 @@ services:
         value: 20.11.1
       - key: NODE_ENV
         value: production
+      # REQUIRED: paste your MongoDB Atlas connection string here after the
+      # first deploy (sync: false means you supply the value in the dashboard).
+      # If it is missing, /admin returns "Database unavailable" (see README).
       - key: MONGODB_URI
         sync: false
       - key: GOOGLE_CLIENT_ID

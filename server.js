@@ -9,13 +9,14 @@ const morgan = require('morgan'); // For logging requests
 dotenv.config();
 
 // Import database connection
-const { connectDB } = require('./db');
+const { connectDB, getDbStatus } = require('./db');
 
 // Import routes
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
 const apiRoutes = require('./routes/api');
 const apiKeysRoutes = require('./routes/apiKeys');
+const setupRoutes = require('./routes/setup');
 
 // Import logging utility
 const { logExecution } = require('./services/apiService');
@@ -41,11 +42,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Health check — must answer even when MongoDB is unavailable
 app.get('/healthz', (req, res) => {
-    const mongoose = require('mongoose');
+    const db = getDbStatus();
     res.status(200).json({
         status: 'ok',
         uptime: process.uptime(),
-        dbState: mongoose.connection.readyState, // 1 = connected
+        dbState: db.state, // 1 = connected
+        dbConnected: db.connected,
+        mongodbUriSet: db.uriSet,
+        dbError: db.lastError, // sanitized; null when connected or never failed
     });
 });
 
@@ -54,6 +58,7 @@ app.get('/', (req, res) => {
     res.redirect('/admin'); // Default to admin dashboard
 });
 
+app.use('/', setupRoutes); // /setup — reachable without the database
 app.use('/auth', authRoutes);
 app.use('/admin', adminRoutes);
 app.use('/api', apiRoutes);
@@ -97,6 +102,10 @@ const server = app.listen(PORT, HOST, async () => {
         startScheduler();
     } catch (err) {
         console.error('Startup completed with database errors:', err.message);
+        console.error(
+            'The app keeps retrying MongoDB in the background every 60s. ' +
+            'Fix MONGODB_URI / Atlas network access and it will connect without a redeploy.'
+        );
     }
 });
 

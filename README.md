@@ -96,7 +96,10 @@ An AI-powered Node.js/Express application for autonomous blog post generation, o
 >
 > **Health check:** the server binds `0.0.0.0:$PORT` and serves `GET /healthz` **before** the
 > database connects, so a bad/missing `MONGODB_URI` no longer crash-loops the deploy — it shows
-> up as `dbState: 0` in the health payload and a `503` on `/admin`.
+> up as `dbState: 0` in the health payload, and `/admin` redirects to the in-app Database Setup
+> page (`/setup`). The app then **retries MongoDB automatically** (fast retries at startup, then
+> every 60s in the background), so once `MONGODB_URI` / Atlas network access is fixed it
+> connects without a redeploy.
 >
 > **Scheduling:** an internal hourly `node-cron` tick (`services/schedulerService.js`) runs the
 > pipeline whenever `frequencyHours` has elapsed. On Render's free tier the instance sleeps, so
@@ -116,6 +119,80 @@ An AI-powered Node.js/Express application for autonomous blog post generation, o
         *   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, etc.
     *   **Redirect URIs**: In your Google Cloud Console, update "Authorized redirect URIs" to include your Render service URL's callback endpoint (e.g., `https://your-app-name.onrender.com/auth/callback`).
     *   **Database**: Render offers a free MongoDB service or you can connect your existing MongoDB Atlas.
+
+### Connecting MongoDB from the app (no env var needed)
+
+If you don't want to touch Render's dashboard, the app includes an in-app
+**Database Setup** page at `/setup`:
+
+1. Open `https://your-app-name.onrender.com/setup` (it works even while MongoDB
+   is unreachable — once connected it redirects to `/admin`).
+2. Paste your Atlas connection string (Atlas → Connect → Drivers) and click
+   **Save & Connect**.
+3. The app saves it locally (git-ignored), masks it everywhere it is displayed
+   (`user:***@host`), and reconnects automatically with the background retry loop.
+
+**Access rule:** while the database is not configured/reachable, `/admin` (and
+the app's homepage) redirect to `/setup` — you cannot open the admin panel
+until MongoDB connects, but you can always configure MongoDB itself.
+
+#### How to get the MongoDB credentials (free)
+
+The `/setup` page contains this guide too, in full. Short version:
+
+1. **Account:** sign up at <https://www.mongodb.com/cloud/atlas/register> (free).
+2. **Cluster:** *Build a Database* → free **M0** plan (Shared) → any region → *Create* (takes 1–3 min).
+3. **User:** *Database Access* → *Add New Database User* → *Password* auth → save the username & password.
+4. **Network access:** *Network Access* → *Add IP Address* → *Allow access from anywhere*
+   (`0.0.0.0/0`) → *Confirm* (the app's servers use changing IPs).
+5. **Connection string:** *Database* → your cluster → *Connect* → *Drivers* → *Node.js* →
+   copy the `mongodb+srv://...` string.
+6. **Password:** replace `<password>` in the string with your user's password; URL-encode
+   special characters (`@` → `%40`, `:` → `%3A`, `/` → `%2F`, `#` → `%23`, `?` → `%3F`).
+7. **Paste & connect:** paste the finished string on `/setup` and click *Save & Connect*.
+
+Common errors: `Authentication failed` = wrong user/password; `querySrv ENOTFOUND` = wrong
+hostname or cluster still creating; `not authorized` = network access missing; `timed out` =
+temporary, the app retries automatically.
+
+Notes:
+- The in-app saved string **takes precedence** over the `MONGODB_URI` env var
+  while it exists. Use the **Remove Saved Connection** button to fall back to
+  the env var.
+- Render's free-tier filesystem is ephemeral: the saved string can be lost when
+  the instance is replaced/redeployed. For a durable setup, also set
+  `MONGODB_URI` in Render → Service → Environment — the in-app page is then a
+  convenient way to fix the database without a redeploy.
+- The page is unauthenticated by design (it must work before the DB — and
+  therefore before Google auth — is reachable). It is only functional while the
+  database is disconnected.
+
+### Troubleshooting: "Database unavailable" after a successful deploy
+
+The server intentionally starts before MongoDB connects, so a deploy can be marked
+**live** while the database is still unreachable — opening `/admin` (or the homepage)
+redirects to the **Database Setup** page (`/setup`), where you can add the credentials
+and follow the step-by-step instructions. Check the following in order:
+
+1.  **Is `MONGODB_URI` actually set on Render?** Open your service → **Environment** in the
+    Render dashboard. The blueprint (`render.yaml`) declares the variable but with
+    `sync: false`, which means **you must paste the value yourself** — an empty value is the
+    #1 cause of this message. After saving, Render redeploys automatically.
+    **No dashboard access?** Paste the connection string on the in-app Database Setup page
+    (`https://your-app-name.onrender.com/setup`) instead — no redeploy needed.
+2.  **What does `/healthz` say?** `https://your-app-name.onrender.com/healthz` returns
+    `mongodbUriSet` (whether the variable exists) and `dbError` (the sanitized reason —
+    e.g. `Authentication failed` vs `querySrv ENOTFOUND ...` vs `not authorized`), so you can
+    tell a credentials problem from a network-access problem.
+3.  **Atlas network access:** MongoDB Atlas → **Network Access** → add `0.0.0.0/0` (allow from
+    anywhere) or at least the IP range Render's service egresses from. If the last connection
+    attempt was blocked you'll see `not authorized` / `ENOTFOUND` in `dbError`.
+4.  **Credentials:** double-check the database user and password in the connection string.
+    If the password contains special characters (`@`, `:`, `/`, `#`, `?`), they must be
+    URL-encoded (e.g. `p@ss` → `p%40ss`).
+5.  **No redeploy needed to recover:** the app retries MongoDB automatically (fast retries at
+    startup, then every 60s), so once the variable/network access is fixed it connects on its
+    own. Check the Render logs for `MongoDB Connected successfully.` to confirm.
 
 3.  **Cron Triggers (External Requirement):**
     *   Render's free tier does *not* support internal background processes that need to run on a schedule when the server is asleep.

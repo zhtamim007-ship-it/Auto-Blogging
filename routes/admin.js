@@ -2,7 +2,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
-const { Settings, AuthToken, ExecutionLog } = require('../db');
+const { Settings, AuthToken, ExecutionLog, getDbStatus } = require('../db');
 const googleAuth = require('../config/googleAuth');
 const { google } = require('googleapis');
 const apiConfig = require('../config/apiConfig');
@@ -37,12 +37,16 @@ function withDefaults(settings) {
 }
 
 const isAuthenticated = async (req, res, next) => {
-    // Fail fast (and readably) when the database is unreachable instead of
-    // letting every query hang on Mongoose's 10s command buffer.
+    // The admin panel needs the database, but the database may not be
+    // configured yet. Instead of failing, send the user to the in-app
+    // Database Setup page where they can paste their MongoDB connection
+    // string (that page works without the DB).
     if (mongoose.connection.readyState !== 1) {
-        return res.status(503).send(
-            'Database unavailable. Check the MONGODB_URI environment variable and that this host is allowed in your MongoDB Atlas network access list.'
+        const db = getDbStatus();
+        console.error(
+            `Admin access blocked: MongoDB not connected (${db.lastError || 'no connection string configured'}). Redirecting to /setup.`
         );
+        return res.redirect('/setup');
     }
 
     try {
