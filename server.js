@@ -17,6 +17,7 @@ const adminRoutes = require('./routes/admin');
 const apiRoutes = require('./routes/api');
 const apiKeysRoutes = require('./routes/apiKeys');
 const setupRoutes = require('./routes/setup');
+const authSetupRoutes = require('./routes/authSetup');
 
 // Import logging utility
 const { logExecution } = require('./services/apiService');
@@ -59,7 +60,8 @@ app.get('/', (req, res) => {
 });
 
 app.use('/', setupRoutes); // /setup — reachable without the database
-app.use('/auth', authRoutes);
+app.use('/auth', authRoutes);       // /auth/login, /auth/callback, /auth/status, etc.
+app.use('/auth', authSetupRoutes);  // /auth/google-setup — in-app Google OAuth config
 app.use('/admin', adminRoutes);
 app.use('/api', apiRoutes);
 app.use('/api-keys', apiKeysRoutes);

@@ -19,7 +19,7 @@ router.get('/login', async (req, res) => {
     if (!status.ready) {
         const msg =
             'Google sign-in is not configured yet. Missing: ' + status.missing.join(', ') + '. ' +
-            'Set these environment variables (Render → Environment) and redeploy.';
+            'Set them via the in-app setup page (/auth/google-setup) or as environment variables (Render → Environment).';
         console.error(msg);
         logExecution('FAILED', 'Google Auth Login', msg);
         return res.status(500).render('oauth-error', {

@@ -53,6 +53,10 @@
             background-color: #4299e1; color: #fff; text-decoration: none; border-radius: 5px;
         }
         a.button:hover { background-color: #3182ce; }
+        .button-setup {
+            display: inline-block; padding: 10px 18px;
+            background-color: #6b7280; color: #fff; text-decoration: none; border-radius: 5px;
+        }
     </style>
 </head>
 <body>
@@ -81,15 +85,25 @@
             <em>OAuth 2.0 Client ID</em> (type: <strong>Web application</strong>).</li>
         <li>Under <strong>Authorised redirect URIs</strong>, add exactly:<br>
             <span class="uri"><%= suggestedRedirectUri %></span></li>
-        <li>In your hosting dashboard (Render → Environment), set:<br>
+        <li><strong>Option A — In-app setup (recommended):</strong><br>
+            Go to the <a href="/auth/google-setup">Google Credentials Setup page</a> and paste your
+            <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code>, and
+            <code>GOOGLE_CALLBACK_URL</code> into the form. No redeploy needed.</li>
+        <li><strong>Option B — Environment variables:</strong><br>
+            In your hosting dashboard (Render → Environment), set:<br>
             <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code> and
-            <code>GOOGLE_CALLBACK_URL=<%= suggestedRedirectUri %></code></li>
-        <li>Save and redeploy, then try <a href="/auth/login">signing in</a> again.</li>
+            <code>GOOGLE_CALLBACK_URL=<%= suggestedRedirectUri %></code><br>
+            Save and redeploy.</li>
+        <li>Then try <a href="/auth/login">signing in</a> again.</li>
     </ol>
     <p class="subtitle">Tip: the URI must match character for character — same scheme (https), no trailing slash,
         no query string. Machine-readable status is available at <code>/auth/status</code>.</p>
 
-    <a class="button" href="/admin">← Back to dashboard</a>
+    <div style="margin-top: 20px;">
+        <a class="button" href="/admin">← Back to dashboard</a>
+        &nbsp;&nbsp;|&nbsp;&nbsp;
+        <a class="button-setup" href="/auth/google-setup">Configure Google Credentials In-App</a>
+    </div>
 </div>
 </body>
 </html>
