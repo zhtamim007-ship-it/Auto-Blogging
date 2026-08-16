@@ -194,6 +194,34 @@ and follow the step-by-step instructions. Check the following in order:
     startup, then every 60s), so once the variable/network access is fixed it connects on its
     own. Check the Render logs for `MongoDB Connected successfully.` to confirm.
 
+### Troubleshooting: Google "Error 400: invalid_request — Missing required parameter: redirect_uri"
+
+This appears on Google's own *Access blocked: Authorisation error* page, immediately after
+clicking **Connect Google Account**. It means the consent URL the app sent to Google had an
+**empty `redirect_uri`** — i.e. `GOOGLE_CALLBACK_URL` was not set (or was left as the
+`https://your-app-name.onrender.com/...` placeholder) in the environment.
+
+The app now recovers automatically: if `GOOGLE_CALLBACK_URL` is missing it falls back to
+`RENDER_EXTERNAL_URL` and finally to the host of the incoming request, so the redirect URI is
+never empty. It also normalizes the value (adds `https://`, appends `/auth/callback`, strips
+trailing slashes and query strings) and uses the *same* URI for the token exchange.
+
+To verify and finish the setup:
+
+1.  Open `https://your-app-name.onrender.com/auth/status`. It returns the exact
+    `redirectUri` this deployment will use and where it came from (`redirectUriSource`).
+2.  Copy that URI into **Google Cloud Console → APIs & Services → Credentials →
+    your OAuth 2.0 Client ID (Web application) → Authorised redirect URIs**. It must match
+    character for character (https, no trailing slash, no query string).
+3.  Set `GOOGLE_CALLBACK_URL` to the same value in Render → **Environment** (recommended, so
+    the URI never depends on request headers), along with `GOOGLE_CLIENT_ID` and
+    `GOOGLE_CLIENT_SECRET`.
+4.  If anything is still missing, `/auth/login` now shows an in-app diagnostics page with the
+    exact fix instead of bouncing you to Google's error screen.
+
+> A related error, **`redirect_uri_mismatch`**, means the URI *is* being sent but is not in the
+> Authorised redirect URIs list — same fix, step 2.
+
 3.  **Cron Triggers (External Requirement):**
     *   Render's free tier does *not* support internal background processes that need to run on a schedule when the server is asleep.
     *   You **must** use an **external cron job service** to trigger the pipeline. The endpoint to trigger is:
