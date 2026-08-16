@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= pageTitle %> - Blogger AI</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a202c;
+            color: #e2e8f0;
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 720px;
+            margin: 40px auto;
+            padding: 30px;
+            background-color: #2d3748;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+        h1 { color: #4299e1; margin-bottom: 6px; font-size: 2rem; }
+        .subtitle { color: #a0aec0; margin-top: 0; margin-bottom: 24px; }
+        .message { margin-bottom: 20px; padding: 12px; border-radius: 5px; }
+        .message.error { background-color: #742a2a; color: #feb2b2; border: 1px solid #9b2c2c; }
+        .message.success { background-color: #22543d; color: #9ae6b4; border: 1px solid #276749; }
+        .status-box {
+            background-color: #1a202c;
+            border: 1px solid #4a5568;
+            border-radius: 6px;
+            padding: 14px 16px;
+            margin-bottom: 24px;
+        }
+        .status-box p { margin: 4px 0; }
+        .status-box .label { color: #a0aec0; font-weight: bold; }
+        .badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+        .badge.ok { background-color: #22543d; color: #9ae6b4; }
+        .badge.bad { background-color: #742a2a; color: #feb2b2; }
+        .badge.pending { background-color: #744210; color: #fbd38d; }
+        .mono { font-family: 'Courier New', monospace; word-break: break-all; }
+        .error-detail { color: #feb2b2; }
+        form { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; color: #a0aec0; }
+        input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #4a5568;
+            border-radius: 4px;
+            background-color: #1a202c;
+            color: #e2e8f0;
+            box-sizing: border-box;
+        }
+        input[type="password"]::placeholder { color: #718096; }
+        .hint { color: #a0aec0; font-size: 0.9rem; margin-top: 8px; }
+        .hint code { background-color: #1a202c; padding: 1px 6px; border-radius: 3px; color: #90cdf4; }
+        button {
+            padding: 10px 20px;
+            background-color: #4299e1;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 12px;
+        }
+        button:hover { background-color: #2b6cb0; }
+        button.secondary {
+            background-color: #4a5568;
+            margin-left: 8px;
+        }
+        button.secondary:hover { background-color: #374151; }
+        .clear-form { display: inline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Database Setup</h1>
+        <p class="subtitle">Connect your MongoDB Atlas account by pasting your connection string.</p>
+
+        <% if (message) { %>
+            <div class="message <%= error ? 'error' : 'success' %>"><%= message %></div>
+        <% } %>
+
+        <div class="status-box">
+            <p>
+                <span class="label">Connection status:</span>
+                <% if (db.connected) { %>
+                    <span class="badge ok">Connected</span>
+                <% } else if (db.state === 2) { %>
+                    <span class="badge pending">Connecting…</span>
+                <% } else { %>
+                    <span class="badge bad">Not connected</span>
+                <% } %>
+            </p>
+            <p><span class="label">Connection string:</span>
+                <% if (db.uriMasked) { %>
+                    <span class="mono"><%= db.uriMasked %></span>
+                    (<%= db.uriSource === 'env' ? 'from MONGODB_URI environment variable' : 'saved in-app' %>)
+                <% } else { %>
+                    <span class="error-detail">not set</span>
+                <% } %>
+            </p>
+            <% if (db.lastError) { %>
+                <p><span class="label">Last error:</span> <span class="error-detail mono"><%= db.lastError %></span></p>
+            <% } %>
+        </div>
+
+        <form action="/setup/save" method="POST">
+            <label for="mongodbUri">MongoDB connection string (from Atlas → Connect → Drivers)</label>
+            <input type="password" id="mongodbUri" name="mongodbUri"
+                   placeholder="mongodb+srv://dbUser:password@cluster0.xxxxx.mongodb.net/"
+                   autocomplete="off" spellcheck="false">
+            <button type="submit">Save &amp; Connect</button>
+        </form>
+
+        <% if (db.uriSource === 'in-app') { %>
+            <form class="clear-form" action="/setup/clear" method="POST"
+                  onsubmit="return confirm('Remove the saved connection string and stop using this database?');">
+                <button type="submit" class="secondary">Remove Saved Connection</button>
+            </form>
+        <% } %>
+
+        <p class="hint">
+            <strong>Tip:</strong> the string is stored on this server (never in git) and the app keeps
+            retrying automatically until it connects. For persistence across redeploys, also set
+            <code>MONGODB_URI</code> in Render → Service → Environment — the in-app value takes precedence
+            while it exists. Make sure your Atlas <strong>Network Access</strong> includes
+            <code>0.0.0.0/0</code> (allow from anywhere).
+        </p>
+        <p class="hint"><a href="/healthz" style="color:#90cdf4;">Check /healthz</a></p>
+    </div>
+</body>
+</html>

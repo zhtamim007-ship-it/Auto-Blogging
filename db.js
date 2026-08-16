@@ -1,10 +1,46 @@
 // db.js
+const fs = require('fs');
+const path = require('path');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI;
+// Connection string precedence: in-app saved config (most recent explicit
+// user action) -> MONGODB_URI environment variable -> not set.
+const DB_CONFIG_FILE = path.join(__dirname, 'data', 'db-config.json');
+
+function loadUriFromFile() {
+    try {
+        const parsed = JSON.parse(fs.readFileSync(DB_CONFIG_FILE, 'utf8'));
+        if (parsed && typeof parsed.mongodbUri === 'string' && parsed.mongodbUri.trim()) {
+            return parsed.mongodbUri.trim();
+        }
+    } catch (err) {
+        // No file yet — first run.
+    }
+    return null;
+}
+
+function saveUriToFile(uri) {
+    try {
+        fs.mkdirSync(path.dirname(DB_CONFIG_FILE), { recursive: true });
+        fs.writeFileSync(DB_CONFIG_FILE, JSON.stringify({ mongodbUri: uri }, null, 2), 'utf8');
+        console.log('Database connection string saved to local config file (not committed to git).');
+    } catch (err) {
+        console.error('Could not persist database config file:', err.message);
+    }
+}
+
+function deleteUriFile() {
+    try {
+        fs.unlinkSync(DB_CONFIG_FILE);
+    } catch (err) {
+        // Nothing to remove.
+    }
+}
+
+let MONGODB_URI = loadUriFromFile() || process.env.MONGODB_URI || null;
 
 let connectionPromise = null;
 let lastConnectionError = null;
@@ -26,13 +62,74 @@ function sanitizeErrorMessage(message) {
     return message.replace(/(mongodb(\+srv)?:\/\/[^:@/]+:)[^@/]+(@)/gi, '$1***$3');
 }
 
+// Mask the credentials portion of a connection string for display.
+// "mongodb+srv://user:pw@host/db" -> "mongodb+srv://user:***@host/db"
+function maskUri(uri) {
+    if (typeof uri !== 'string' || !uri) return null;
+    return uri.replace(
+        /^(mongodb(\+srv)?:\/\/)([^:@/]+)(?::([^@/]+))?@/i,
+        (m, scheme, srv, user, pass) => (pass !== undefined ? `${scheme}${user}:***@` : `${scheme}***@`)
+    );
+}
+
 // Current database status, safe to expose (no credentials, no URI).
-const getDbStatus = () => ({
-    state: mongoose.connection.readyState, // 0 disconnected, 1 connected, 2 connecting, 3 disconnecting
-    connected: mongoose.connection.readyState === 1,
-    uriSet: Boolean(MONGODB_URI),
-    lastError: lastConnectionError ? sanitizeErrorMessage(lastConnectionError.message) : null,
-});
+const getDbStatus = () => {
+    const envUri = process.env.MONGODB_URI || null;
+    return {
+        state: mongoose.connection.readyState, // 0 disconnected, 1 connected, 2 connecting, 3 disconnecting
+        connected: mongoose.connection.readyState === 1,
+        uriSet: Boolean(MONGODB_URI),
+        uriSource: MONGODB_URI ? (envUri && MONGODB_URI === envUri ? 'env' : 'in-app') : 'none',
+        uriMasked: maskUri(MONGODB_URI),
+        lastError: lastConnectionError ? sanitizeErrorMessage(lastConnectionError.message) : null,
+    };
+};
+
+// Set the connection string from the in-app Database Setup page. Persists it
+// to a local file, aborts any in-flight connection, and kicks off a fresh
+// connect (with the automatic retry loop) in the background.
+const setMongoUri = async (uri) => {
+    const trimmed = (uri || '').trim();
+    if (!trimmed) throw new Error('Connection string is required.');
+    if (!/^mongodb(\+srv)?:\/\//i.test(trimmed)) {
+        throw new Error('Invalid connection string — it must start with mongodb:// or mongodb+srv://');
+    }
+
+    // Let any in-flight connect attempt settle first so two connects never race.
+    if (connectionPromise) {
+        try { await connectionPromise; } catch (err) { /* failed attempt — expected */ }
+        connectionPromise = null;
+    }
+    try {
+        if (mongoose.connection.readyState !== 0) await mongoose.disconnect();
+    } catch (err) {
+        console.error('Error disconnecting before reconnect:', err.message);
+    }
+
+    MONGODB_URI = trimmed;
+    lastConnectionError = null;
+    saveUriToFile(trimmed);
+
+    if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
+    // Fire-and-forget: returns immediately, connection proceeds in background
+    // and the retry loop keeps trying until it succeeds.
+    connectDB().catch((err) => {
+        console.error('Background reconnect using saved connection string failed:', sanitizeErrorMessage(err.message));
+    });
+};
+
+// Remove the in-app saved connection string and fall back to MONGODB_URI.
+const clearMongoUri = async () => {
+    if (connectionPromise) {
+        try { await connectionPromise; } catch (err) { /* expected */ }
+        connectionPromise = null;
+    }
+    deleteUriFile();
+    MONGODB_URI = process.env.MONGODB_URI || null;
+    lastConnectionError = null;
+    if (retryTimer) { clearInterval(retryTimer); retryTimer = null; }
+    console.log('In-app database connection string cleared.');
+};
 
 const attemptConnect = async () => {
     if (mongoose.connection.readyState === 1) return mongoose.connection;
@@ -40,7 +137,8 @@ const attemptConnect = async () => {
     if (!MONGODB_URI) {
         // Do not kill the process: the HTTP server must stay up so the platform
         // health check passes and the misconfiguration is visible in the logs.
-        const msg = 'MONGODB_URI is not defined. Set it in your environment variables.';
+        const msg =
+            'MONGODB_URI is not defined. Set it in your environment variables or paste your connection string on the in-app Database Setup page (/setup).';
         console.error(`CONFIG ERROR: ${msg}`);
         lastConnectionError = new Error(msg);
         throw new Error(msg);
@@ -217,6 +315,8 @@ const ApiKey = mongoose.model('ApiKey', apiKeySchema);
 module.exports = {
     connectDB,
     getDbStatus,
+    setMongoUri,
+    clearMongoUri,
     Settings,
     AuthToken,
     ExecutionLog,

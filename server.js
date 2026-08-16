@@ -16,6 +16,7 @@ const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
 const apiRoutes = require('./routes/api');
 const apiKeysRoutes = require('./routes/apiKeys');
+const setupRoutes = require('./routes/setup');
 
 // Import logging utility
 const { logExecution } = require('./services/apiService');
@@ -57,6 +58,7 @@ app.get('/', (req, res) => {
     res.redirect('/admin'); // Default to admin dashboard
 });
 
+app.use('/', setupRoutes); // /setup — reachable without the database
 app.use('/auth', authRoutes);
 app.use('/admin', adminRoutes);
 app.use('/api', apiRoutes);

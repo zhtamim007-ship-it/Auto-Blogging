@@ -119,6 +119,30 @@ An AI-powered Node.js/Express application for autonomous blog post generation, o
     *   **Redirect URIs**: In your Google Cloud Console, update "Authorized redirect URIs" to include your Render service URL's callback endpoint (e.g., `https://your-app-name.onrender.com/auth/callback`).
     *   **Database**: Render offers a free MongoDB service or you can connect your existing MongoDB Atlas.
 
+### Connecting MongoDB from the app (no env var needed)
+
+If you don't want to touch Render's dashboard, the app includes an in-app
+**Database Setup** page at `/setup`:
+
+1. Open `https://your-app-name.onrender.com/setup` (it works even while MongoDB
+   is unreachable — once connected it redirects to `/admin`).
+2. Paste your Atlas connection string (Atlas → Connect → Drivers) and click
+   **Save & Connect**.
+3. The app saves it locally (git-ignored), masks it everywhere it is displayed
+   (`user:***@host`), and reconnects automatically with the background retry loop.
+
+Notes:
+- The in-app saved string **takes precedence** over the `MONGODB_URI` env var
+  while it exists. Use the **Remove Saved Connection** button to fall back to
+  the env var.
+- Render's free-tier filesystem is ephemeral: the saved string can be lost when
+  the instance is replaced/redeployed. For a durable setup, also set
+  `MONGODB_URI` in Render → Service → Environment — the in-app page is then a
+  convenient way to fix the database without a redeploy.
+- The page is unauthenticated by design (it must work before the DB — and
+  therefore before Google auth — is reachable). It is only functional while the
+  database is disconnected.
+
 ### Troubleshooting: "Database unavailable" after a successful deploy
 
 The server intentionally starts before MongoDB connects, so a deploy can be marked
@@ -129,6 +153,8 @@ message. Check the following in order:
     Render dashboard. The blueprint (`render.yaml`) declares the variable but with
     `sync: false`, which means **you must paste the value yourself** — an empty value is the
     #1 cause of this message. After saving, Render redeploys automatically.
+    **No dashboard access?** Paste the connection string on the in-app Database Setup page
+    (`https://your-app-name.onrender.com/setup`) instead — no redeploy needed.
 2.  **What does `/healthz` say?** `https://your-app-name.onrender.com/healthz` returns
     `mongodbUriSet` (whether the variable exists) and `dbError` (the sanitized reason —
     e.g. `Authentication failed` vs `querySrv ENOTFOUND ...` vs `not authorized`), so you can

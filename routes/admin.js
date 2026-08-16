@@ -44,11 +44,14 @@ const isAuthenticated = async (req, res, next) => {
         let hint;
         if (!db.uriSet) {
             hint =
-                'MONGODB_URI is not set. Add it in the Render dashboard (Service → Environment) and redeploy, or if it was just added, wait for the automatic reconnect.';
+                'No connection string is configured. Paste your MongoDB Atlas connection string on the in-app Database Setup page (https://' +
+                req.get('host') +
+                '/setup), or set MONGODB_URI in the Render dashboard (Service → Environment).';
         } else if (db.lastError) {
             hint =
                 `Last MongoDB error: ${db.lastError}. ` +
-                'Check that the MONGODB_URI credentials are correct and that this host is allowed in your MongoDB Atlas network access list (add 0.0.0.0/0 to allow any host). ' +
+                'Check that the connection string credentials are correct and that this host is allowed in your MongoDB Atlas network access list (add 0.0.0.0/0 to allow any host). ' +
+                'You can update the connection string on the Database Setup page (/setup). ' +
                 'The app keeps retrying automatically — no redeploy needed once it is fixed.';
         } else {
             hint = 'MongoDB is still connecting — the app retries automatically.';
