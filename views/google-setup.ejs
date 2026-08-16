@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= pageTitle || 'Google OAuth Setup' %> - Blogger AI</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a202c;
+            color: #e2e8f0;
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 30px;
+            background-color: #2d3748;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+        h1 { color: #4299e1; margin-bottom: 6px; font-size: 2rem; }
+        h2 { color: #4299e1; margin-top: 28px; font-size: 1.4rem; }
+        .subtitle { color: #a0aec0; margin-top: 0; margin-bottom: 24px; }
+        .message { margin-bottom: 20px; padding: 12px; border-radius: 5px; }
+        .message.error { background-color: #742a2a; color: #feb2b2; border: 1px solid #9b2c2c; }
+        .message.success { background-color: #22543d; color: #9ae6b4; border: 1px solid #276749; }
+        .status-box {
+            background-color: #1a202c;
+            border: 1px solid #4a5568;
+            border-radius: 6px;
+            padding: 14px 16px;
+            margin-bottom: 24px;
+        }
+        .status-box p { margin: 4px 0; }
+        .status-box .label { color: #a0aec0; font-weight: bold; }
+        .badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+        .badge.ok { background-color: #22543d; color: #9ae6b4; }
+        .badge.bad { background-color: #742a2a; color: #feb2b2; }
+        .badge.pending { background-color: #744210; color: #fbd38d; }
+        .mono { font-family: 'Courier New', monospace; word-break: break-all; }
+        .error-detail { color: #feb2b2; }
+        form { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; color: #a0aec0; }
+        input[type="text"], input[type="password"], input[type="url"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #4a5568;
+            border-radius: 4px;
+            background-color: #1a202c;
+            color: #e2e8f0;
+            box-sizing: border-box;
+        }
+        input::placeholder { color: #718096; }
+        .hint {            color: #a0aec0;
+            font-size: 0.9rem;
+            margin-top: 8px;
+        }
+        .hint code {
+            background-color: #1a202c;
+            padding: 1px 6px;
+            border-radius: 3px;
+            color: #90cdf4;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4299e1;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 12px;
+        }
+        button:hover { background-color: #2b6cb0; }
+        button.secondary {
+            background-color: #4a5568;
+            margin-left: 8px;
+        }
+        button.secondary:hover { background-color: #374151; }
+        .clear-form { display: inline; }
+        .instructions {
+            background-color: #1a202c;
+            border: 1px solid #4a5568;
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+        }
+        .instructions summary {
+            cursor: pointer;
+            color: #90cdf4;
+            font-weight: bold;
+            outline: none;
+            font-size: 1.1rem;
+        }
+        .instructions summary:hover { color: #4299e1; }
+        .instructions ol { margin: 12px 0 4px 0; padding-left: 22px; }
+        .instructions li { margin-bottom: 12px; }
+        .instructions code, .instructions .code {
+            background-color: #2d3748;
+            padding: 2px 8px;
+            border-radius: 4px;
+            color: #9ae6b4;
+            word-break: break-all;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+        .instructions a { color: #90cdf4; }
+        .instructions .screenshot-note {
+            background-color: #2d3748;
+            border-left: 4px solid #4299e1;
+            padding: 8px 12px;
+            margin: 8px 0;
+            border-radius: 0 4px 4px 0;
+            font-size: 0.9rem;
+            color: #e2e8f0;
+        }
+        .back-link { margin-top: 20px; }
+        .back-link a { color: #90cdf4; }
+        .field-group {
+            margin-bottom: 20px;
+            padding: 16px;
+            background-color: #1a202c;
+            border-radius: 6px;
+            border: 1px solid #4a5568;
+        }
+        .field-group label { color: #90cdf4; }
+        .field-group input { margin-top: 5px; }
+        .current-uri {
+            background-color: #22543d;
+            color: #9ae6b4;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            word-break: break-all;
+            display: inline-block;
+            margin: 6px 0;
+        }
+        .cred-source {
+            color: #718096;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Google Sign-In Setup</h1>
+        <p class="subtitle">Enter your Google OAuth 2.0 credentials to enable Blogger integration.</p>
+
+        <% if (message) { %>
+            <div class="message <%= error ? 'error' : 'success' %>"><%= message %></div>
+        <% } %>
+
+        <div class="status-box">
+            <p><span class="label">GOOGLE_CLIENT_ID:</span>
+                <span class="badge <%= inAppStatus.clientIdSet ? 'ok' : 'bad' %>"><%= inAppStatus.clientIdSet ? 'Saved' : 'Not set' %></span>
+                <% if (inAppStatus.clientIdMasked) { %>
+                    <span class="mono" style="color:#718096; font-size:0.85rem;"> <%= inAppStatus.clientIdMasked %></span>
+                <% } %>
+            </p>
+            <p><span class="label">GOOGLE_CLIENT_SECRET:</span>
+                <span class="badge <%= inAppStatus.clientSecretSet ? 'ok' : 'bad' %>"><%= inAppStatus.clientSecretSet ? 'Saved' : 'Not set' %></span>
+                <% if (inAppStatus.clientSecretMasked) { %>
+                    <span class="mono" style="color:#718096; font-size:0.85rem;"> <%= inAppStatus.clientSecretMasked %></span>
+                <% } %>
+            </p>
+            <p><span class="label">GOOGLE_CALLBACK_URL:</span>
+                <span class="badge <%= inAppStatus.callbackUrlSet ? 'ok' : 'bad' %>"><%= inAppStatus.callbackUrlSet ? 'Saved' : 'Not set' %></span>
+                <% if (inAppStatus.callbackUrlMasked) { %>
+                    <span class="mono" style="color:#718096; font-size:0.85rem;"> <%= inAppStatus.callbackUrlMasked %></span>
+                <% } %>
+            </p>
+            <p><span class="label">Redirect URI resolved:</span>
+                <span style="color:<%= authStatus.redirectUri ? '#9ae6b4' : '#feb2b2' %>;"><%= authStatus.redirectUri || 'Not resolved - Google auth will fail' %></span>
+                <span class="cred-source"> (from <%= authStatus.redirectUriSource %>)</span>
+            </p>
+            <p><span class="label">Overall readiness:</span>
+                <span class="badge <%= authStatus.ready ? 'ok' : 'bad' %>">
+                    <%= authStatus.ready ? 'Ready for Google Sign-In' : 'Missing: ' + (authStatus.missing && authStatus.missing.length > 0 ? authStatus.missing.join(', ') : 'please configure') %>
+                </span>
+            </p>
+        </div>
+
+        <details class="instructions">
+            <summary>New here Step-by-step: how to get Google OAuth credentials (free, ~10 minutes)</summary>
+            <ol>
+                <li>
+                    <strong>Go to the Google Cloud Console</strong> — open
+                    <a href="https://console.developers.google.com" target="_blank" rel="noopener">https://console.developers.google.com</a>
+                    and sign in with the Google account that owns your Blogger blog.
+                </li>
+                <li>
+                    <strong>Create a new project (or select an existing one)</strong> — at the top of the page,
+                    click the project dropdown &rarr; <em>New Project</em>. Give it a name like "Auto Blogger" and click
+                    <em>Create</em>.
+                </li>
+                <li>
+                    <strong>Enable the Blogger API</strong> — in the left menu go to
+                    <em>APIs &amp; Services</em> &rarr; <em>Library</em>. Search for
+                    <strong>"Blogger API"</strong>, click on it, then click <em>Enable</em>.
+                    <div class="screenshot-note">You must enable this API for your project, otherwise authentication will fail.</div>
+                </li>
+                <li>
+                    <strong>Create OAuth consent screen</strong> — go to
+                    <em>APIs &amp; Services</em> &rarr; <em>OAuth consent screen</em>.
+                    Choose <strong>External</strong> (unless you have Google Workspace) and click <em>Create</em>.
+                    <br>Fill in:
+                    <ul>
+                        <li><strong>App name</strong>: "Auto Blogger" (or whatever you like)</li>
+                        <li><strong>User support email</strong>: your email address</li>
+                        <li><strong>Authorised domains</strong>: if you have a custom domain, add it here (otherwise leave empty)</li>
+                        <li><strong>Developer contact information</strong>: your email address</li>
+                    </ul>
+                    Click <em>Save and Continue</em>.
+                    <br>On the <strong>Scopes</strong> page, click <em>Add or Remove Scopes</em>, search for
+                    <code>../auth/blogger</code>, select it, then click <em>Update</em> &rarr; <em>Save and Continue</em>.
+                    <br>On the <strong>Test Users</strong> page, add your own email address, then <em>Save and Continue</em>.
+                    <div class="screenshot-note">In production, you would publish the app, but for now "Testing" mode with your email as a test user works fine.</div>
+                </li>
+                <li>
+                    <strong>Create OAuth 2.0 Client ID</strong> — go to
+                    <em>APIs &amp; Services</em> &rarr; <em>Credentials</em>.
+                    Click <em>Create Credentials</em> &rarr; <em>OAuth client ID</em>.
+                    <br>Choose <strong>Web application</strong> as the application type.
+                    <br>Enter a name like "Auto Blogger Web Client".
+                    <br>Under <strong>Authorised redirect URIs</strong>, click <em>Add URI</em> and paste:
+                    <div class="current-uri"><%= authStatus.redirectUri || (suggestedCallbackUrl || 'https://YOUR-APP.onrender.com/auth/callback') %></div>
+                    <div class="screenshot-note">This URL must match EXACTLY what you enter below — same protocol (https), no trailing slash, no extra characters.</div>
+                    Click <em>Create</em>.
+                </li>
+                <li>
+                    <strong>Copy your Client ID and Client Secret</strong> — after creation, a popup will show
+                    your <strong>Client ID</strong> and <strong>Client Secret</strong>.
+                    Copy both and paste them into the fields below.
+                    <div class="screenshot-note">You can also view them anytime by clicking the pencil icon on your OAuth 2.0 Client ID in the Credentials page.</div>
+                </li>
+                <li>
+                    <strong>Paste the credentials below</strong> — fill in the three fields and click
+                    <em>Save Google Credentials</em>. The page will refresh and show the saved status.
+                </li>
+                <li>
+                    <strong>Test the connection</strong> — once saved, go to
+                    <a href="/auth/login">/auth/login</a> to start the Google sign-in flow.
+                    If everything is configured correctly, you'll be redirected to Google's consent screen.
+                </li>
+            </ol>
+        </details>
+
+        <form action="/auth/google-setup/save" method="POST">
+            <h2>Google OAuth Credentials</h2>
+            <p style="color:#a0aec0; font-size:0.9rem;">These values are stored on this server (never in git) and take precedence over environment variables.</p>
+
+            <div class="field-group">
+                <label for="clientId">Client ID</label>
+                <input type="text" id="clientId" name="clientId"
+                       placeholder="e.g. 123456789012-xxxxxxxxxxxx.apps.googleusercontent.com"
+                       autocomplete="off" spellcheck="false"
+                       value="">
+                <div class="hint">Find this in Google Cloud Console &rarr; APIs &amp; Services &rarr; Credentials &rarr; your OAuth 2.0 Client ID.</div>
+            </div>
+
+            <div class="field-group">
+                <label for="clientSecret">Client Secret</label>
+                <input type="password" id="clientSecret" name="clientSecret"
+                       placeholder="e.g. GOCSPX-xxxxxxxxxxxxxxxxxxxx"
+                       autocomplete="off" spellcheck="false"
+                       value="">
+                <div class="hint">Also shown in the popup when you created the OAuth client. It looks like <code>GOCSPX-</code> followed by random characters.</div>
+            </div>
+
+            <div class="field-group">
+                <label for="callbackUrl">Callback / Redirect URI</label>
+                <input type="url" id="callbackUrl" name="callbackUrl"
+                       placeholder="https://your-app.onrender.com/auth/callback"
+                       autocomplete="off" spellcheck="false"
+                       value="<%= authStatus.redirectUri || (suggestedCallbackUrl || '') %>">
+                <div class="hint">This must EXACTLY match what you entered in Google Cloud Console &rarr; Authorised redirect URIs.
+                <br>If you're not sure, use: <code><%= authStatus.redirectUri || (suggestedCallbackUrl || 'https://YOUR-APP.onrender.com/auth/callback') %></code></div>
+            </div>
+
+            <button type="submit">Save Google Credentials</button>
+        </form>
+
+        <% if (inAppStatus.hasInAppConfig) { %>
+            <form class="clear-form" action="/auth/google-setup/clear" method="POST"
+                  onsubmit="return confirm('Remove the saved Google OAuth credentials? You will need to re-enter them to use Google sign-in.');">
+                <button type="submit" class="secondary">Remove Saved Credentials</button>
+            </form>
+        <% } %>
+
+        <div class="back-link">
+            <a href="/admin">Back to Admin Dashboard</a>
+            &nbsp;&nbsp;|&nbsp;&nbsp;
+            <a href="/auth/login">Try Google Sign-In</a>
+            &nbsp;&nbsp;|&nbsp;&nbsp;
+            <a href="/auth/status">Check OAuth Status</a>
+        </div>
+
+        <p class="hint" style="margin-top: 20px;">
+            <strong>Tip:</strong> Credentials are saved locally (in <code>data/google-auth-config.json</code>, never git-tracked).
+            They take precedence over environment variables. If you also have them set in Render's environment variables,
+            the in-app values will be used. To revert to env var values, click "Remove Saved Credentials".
+        </p>
+    </div>
+</body>
+</html>
