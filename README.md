@@ -96,7 +96,9 @@ An AI-powered Node.js/Express application for autonomous blog post generation, o
 >
 > **Health check:** the server binds `0.0.0.0:$PORT` and serves `GET /healthz` **before** the
 > database connects, so a bad/missing `MONGODB_URI` no longer crash-loops the deploy — it shows
-> up as `dbState: 0` in the health payload and a `503` on `/admin`.
+> up as `dbState: 0` in the health payload and a `503` on `/admin`. The app then **retries
+> MongoDB automatically** (fast retries at startup, then every 60s in the background), so once
+> `MONGODB_URI` / Atlas network access is fixed it connects without a redeploy.
 >
 > **Scheduling:** an internal hourly `node-cron` tick (`services/schedulerService.js`) runs the
 > pipeline whenever `frequencyHours` has elapsed. On Render's free tier the instance sleeps, so
@@ -116,6 +118,30 @@ An AI-powered Node.js/Express application for autonomous blog post generation, o
         *   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, etc.
     *   **Redirect URIs**: In your Google Cloud Console, update "Authorized redirect URIs" to include your Render service URL's callback endpoint (e.g., `https://your-app-name.onrender.com/auth/callback`).
     *   **Database**: Render offers a free MongoDB service or you can connect your existing MongoDB Atlas.
+
+### Troubleshooting: "Database unavailable" after a successful deploy
+
+The server intentionally starts before MongoDB connects, so a deploy can be marked
+**live** while the database is still unreachable — `/admin` then returns `503` with that
+message. Check the following in order:
+
+1.  **Is `MONGODB_URI` actually set on Render?** Open your service → **Environment** in the
+    Render dashboard. The blueprint (`render.yaml`) declares the variable but with
+    `sync: false`, which means **you must paste the value yourself** — an empty value is the
+    #1 cause of this message. After saving, Render redeploys automatically.
+2.  **What does `/healthz` say?** `https://your-app-name.onrender.com/healthz` returns
+    `mongodbUriSet` (whether the variable exists) and `dbError` (the sanitized reason —
+    e.g. `Authentication failed` vs `querySrv ENOTFOUND ...` vs `not authorized`), so you can
+    tell a credentials problem from a network-access problem.
+3.  **Atlas network access:** MongoDB Atlas → **Network Access** → add `0.0.0.0/0` (allow from
+    anywhere) or at least the IP range Render's service egresses from. If the last connection
+    attempt was blocked you'll see `not authorized` / `ENOTFOUND` in `dbError`.
+4.  **Credentials:** double-check the database user and password in the connection string.
+    If the password contains special characters (`@`, `:`, `/`, `#`, `?`), they must be
+    URL-encoded (e.g. `p@ss` → `p%40ss`).
+5.  **No redeploy needed to recover:** the app retries MongoDB automatically (fast retries at
+    startup, then every 60s), so once the variable/network access is fixed it connects on its
+    own. Check the Render logs for `MongoDB Connected successfully.` to confirm.
 
 3.  **Cron Triggers (External Requirement):**
     *   Render's free tier does *not* support internal background processes that need to run on a schedule when the server is asleep.

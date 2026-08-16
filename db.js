@@ -7,33 +7,112 @@ dotenv.config();
 const MONGODB_URI = process.env.MONGODB_URI;
 
 let connectionPromise = null;
+let lastConnectionError = null;
+let retryTimer = null;
 
-const connectDB = async () => {
+// Number of fast retries attempted by connectDB() before falling back to the
+// slow background loop (every 60s). Overridable for tests.
+const MAX_INITIAL_RETRIES = Math.max(1, parseInt(process.env.MONGODB_INITIAL_RETRIES || '5', 10));
+const INITIAL_RETRY_BASE_DELAY_MS = 2000; // doubles per attempt, capped at 30s
+const MAX_INITIAL_RETRY_DELAY_MS = 30000;
+const BACKGROUND_RETRY_INTERVAL_MS = 60 * 1000;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Strip anything that looks like a password inside a connection string so
+// error messages and logs never leak credentials.
+function sanitizeErrorMessage(message) {
+    if (typeof message !== 'string') return String(message || 'Unknown error');
+    return message.replace(/(mongodb(\+srv)?:\/\/[^:@/]+:)[^@/]+(@)/gi, '$1***$3');
+}
+
+// Current database status, safe to expose (no credentials, no URI).
+const getDbStatus = () => ({
+    state: mongoose.connection.readyState, // 0 disconnected, 1 connected, 2 connecting, 3 disconnecting
+    connected: mongoose.connection.readyState === 1,
+    uriSet: Boolean(MONGODB_URI),
+    lastError: lastConnectionError ? sanitizeErrorMessage(lastConnectionError.message) : null,
+});
+
+const attemptConnect = async () => {
+    if (mongoose.connection.readyState === 1) return mongoose.connection;
+
     if (!MONGODB_URI) {
         // Do not kill the process: the HTTP server must stay up so the platform
         // health check passes and the misconfiguration is visible in the logs.
         const msg = 'MONGODB_URI is not defined. Set it in your environment variables.';
         console.error(`CONFIG ERROR: ${msg}`);
+        lastConnectionError = new Error(msg);
         throw new Error(msg);
     }
 
+    try {
+        await mongoose.connect(MONGODB_URI, {
+            serverSelectionTimeoutMS: 10000,
+        });
+        lastConnectionError = null;
+        console.log('MongoDB Connected successfully.');
+        return mongoose.connection;
+    } catch (err) {
+        lastConnectionError = err;
+        console.error('MongoDB Connection Error:', sanitizeErrorMessage(err.message));
+        throw err;
+    }
+};
+
+// Once the initial retries are exhausted (e.g. the URI was set or the Atlas
+// network access list was fixed after deploy), keep trying in the background
+// so the app recovers without a redeploy. Mongoose only auto-reconnects after
+// a first successful connection, so this loop is what bridges that gap.
+const scheduleBackgroundRetry = () => {
+    if (retryTimer) return;
+    if (!MONGODB_URI || mongoose.connection.readyState === 1) return;
+
+    retryTimer = setInterval(async () => {
+        if (mongoose.connection.readyState === 1) {
+            clearInterval(retryTimer);
+            retryTimer = null;
+            return;
+        }
+        try {
+            await attemptConnect();
+            clearInterval(retryTimer);
+            retryTimer = null;
+        } catch (err) {
+            console.warn(
+                `MongoDB still unreachable, retrying every ${BACKGROUND_RETRY_INTERVAL_MS / 1000}s:`,
+                sanitizeErrorMessage(err.message)
+            );
+        }
+    }, BACKGROUND_RETRY_INTERVAL_MS);
+    retryTimer.unref(); // never keep the process alive just for the retry loop
+};
+
+const connectDB = async () => {
+    if (mongoose.connection.readyState === 1) return mongoose.connection;
     if (connectionPromise) return connectionPromise;
 
-    mongoose.set('strictQuery', true);
-
-    connectionPromise = mongoose
-        .connect(MONGODB_URI, {
-            serverSelectionTimeoutMS: 10000,
-        })
-        .then((conn) => {
-            console.log('MongoDB Connected successfully.');
-            return conn;
-        })
-        .catch((err) => {
-            connectionPromise = null;
-            console.error('MongoDB Connection Error:', err.message);
-            throw err;
-        });
+    connectionPromise = (async () => {
+        for (let attempt = 1; attempt <= MAX_INITIAL_RETRIES; attempt++) {
+            try {
+                const conn = await attemptConnect();
+                connectionPromise = null;
+                return conn;
+            } catch (err) {
+                if (attempt < MAX_INITIAL_RETRIES) {
+                    const delay = Math.min(
+                        MAX_INITIAL_RETRY_DELAY_MS,
+                        INITIAL_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1)
+                    );
+                    console.warn(`MongoDB retry ${attempt}/${MAX_INITIAL_RETRIES} in ${delay / 1000}s...`);
+                    await sleep(delay);
+                }
+            }
+        }
+        connectionPromise = null;
+        scheduleBackgroundRetry();
+        throw lastConnectionError || new Error('MongoDB connection failed after retries.');
+    })();
 
     return connectionPromise;
 };
@@ -137,6 +216,7 @@ const ApiKey = mongoose.model('ApiKey', apiKeySchema);
 
 module.exports = {
     connectDB,
+    getDbStatus,
     Settings,
     AuthToken,
     ExecutionLog,

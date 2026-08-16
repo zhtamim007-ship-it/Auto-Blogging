@@ -9,7 +9,7 @@ const morgan = require('morgan'); // For logging requests
 dotenv.config();
 
 // Import database connection
-const { connectDB } = require('./db');
+const { connectDB, getDbStatus } = require('./db');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -41,11 +41,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Health check — must answer even when MongoDB is unavailable
 app.get('/healthz', (req, res) => {
-    const mongoose = require('mongoose');
+    const db = getDbStatus();
     res.status(200).json({
         status: 'ok',
         uptime: process.uptime(),
-        dbState: mongoose.connection.readyState, // 1 = connected
+        dbState: db.state, // 1 = connected
+        dbConnected: db.connected,
+        mongodbUriSet: db.uriSet,
+        dbError: db.lastError, // sanitized; null when connected or never failed
     });
 });
 
@@ -97,6 +100,10 @@ const server = app.listen(PORT, HOST, async () => {
         startScheduler();
     } catch (err) {
         console.error('Startup completed with database errors:', err.message);
+        console.error(
+            'The app keeps retrying MongoDB in the background every 60s. ' +
+            'Fix MONGODB_URI / Atlas network access and it will connect without a redeploy.'
+        );
     }
 });
 

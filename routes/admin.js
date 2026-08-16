@@ -2,7 +2,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
-const { Settings, AuthToken, ExecutionLog } = require('../db');
+const { Settings, AuthToken, ExecutionLog, getDbStatus } = require('../db');
 const googleAuth = require('../config/googleAuth');
 const { google } = require('googleapis');
 const apiConfig = require('../config/apiConfig');
@@ -40,9 +40,20 @@ const isAuthenticated = async (req, res, next) => {
     // Fail fast (and readably) when the database is unreachable instead of
     // letting every query hang on Mongoose's 10s command buffer.
     if (mongoose.connection.readyState !== 1) {
-        return res.status(503).send(
-            'Database unavailable. Check the MONGODB_URI environment variable and that this host is allowed in your MongoDB Atlas network access list.'
-        );
+        const db = getDbStatus();
+        let hint;
+        if (!db.uriSet) {
+            hint =
+                'MONGODB_URI is not set. Add it in the Render dashboard (Service → Environment) and redeploy, or if it was just added, wait for the automatic reconnect.';
+        } else if (db.lastError) {
+            hint =
+                `Last MongoDB error: ${db.lastError}. ` +
+                'Check that the MONGODB_URI credentials are correct and that this host is allowed in your MongoDB Atlas network access list (add 0.0.0.0/0 to allow any host). ' +
+                'The app keeps retrying automatically — no redeploy needed once it is fixed.';
+        } else {
+            hint = 'MongoDB is still connecting — the app retries automatically.';
+        }
+        return res.status(503).send(`Database unavailable. ${hint}`);
     }
 
     try {
