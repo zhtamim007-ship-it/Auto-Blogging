@@ -8,4 +8,5 @@ yarn-error.log*
 dist/
 build/
 coverage/
-.DS_Storepackage-lock.json
+.DS_Store
+package-lock.json
