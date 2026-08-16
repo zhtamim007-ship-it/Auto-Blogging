@@ -134,6 +134,22 @@ async function updateKeyLabel(keyId, label) {
     }
 }
 
+// Temporarily deactivate a key that hit a provider rate limit so rotation
+// picks a different one on the next run.
+async function toggleKeyStatusForRateLimit(provider, keyValue) {
+    try {
+        const key = await ApiKey.findOne({ provider, key: keyValue });
+        if (!key) return null;
+        key.isActive = false;
+        await key.save();
+        await logExecution('SUCCESS', 'Rate Limit Key Rotation', `Deactivated rate-limited ${provider} key: ${key.label}`);
+        return key;
+    } catch (error) {
+        console.error('ApiKeyService: Error handling rate-limited key:', error);
+        return null;
+    }
+}
+
 async function getKeyCountByProvider() {
     try {
         const grokKeys = await ApiKey.countDocuments({ provider: 'grok', isActive: true });
@@ -153,5 +169,6 @@ module.exports = {
     removeKey,
     toggleKeyStatus,
     updateKeyLabel,
+    toggleKeyStatusForRateLimit,
     getKeyCountByProvider,
 };

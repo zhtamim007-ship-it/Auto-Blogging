@@ -1,4 +1,5 @@
 // config/googleAuth.js
+require('dotenv').config();
 const { google } = require('googleapis');
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -6,9 +7,9 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL;
 
 if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_CALLBACK_URL) {
-    console.error('FATAL ERROR: Google OAuth credentials (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_CALLBACK_URL) are not fully configured in .env file.');
-    // In a real app, you might want to throw an error or handle this more gracefully
-    // For now, we'll allow it to proceed but expect issues later.
+    // Warn only: the server must still boot so the platform health check passes
+    // and the operator can see the misconfiguration in the dashboard/logs.
+    console.warn('WARNING: Google OAuth credentials (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_CALLBACK_URL) are not fully configured. Google sign-in will fail until they are set.');
 }
 
 const oauth2Client = new google.auth.OAuth2(

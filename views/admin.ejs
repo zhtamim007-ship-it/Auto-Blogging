@@ -91,14 +91,9 @@
         <h1>Blogger Autonomous AI Powerhouse</h1>
         <p>Admin Dashboard</p>
 
-        <% if (blogSelectionMessage) { %>
-            <div class="alert alert-danger">
-                <%= blogSelectionMessage %>
-            </div>
-        <% } %>
-        <% if (error) { %>
-            <div class="alert alert-danger">
-                <%= error %>
+        <% if (typeof message !== 'undefined' && message) { %>
+            <div class="alert <%= error ? 'alert-danger' : 'alert-success' %>">
+                <%= message %>
             </div>
         <% } %>
 
@@ -109,7 +104,7 @@
                 <button type="submit" class="button-secondary">Connect/Re-authenticate Google Account</button>
             </form>
             <% if (blogs && blogs.length > 0) { %>
-                <form action="/admin/resync-blogs" method="POST" style="display: inline-block; margin-left: 15px;">
+                <form action="/auth/resync-blogs" method="POST" style="display: inline-block; margin-left: 15px;">
                     <button type="submit" class="button-secondary">Resync Blogs</button>
                 </form>
             <% } %>
@@ -123,7 +118,7 @@
                     <select id="blogId" name="selectedBlogId">
                         <option value="">-- None --</option>
                         <% blogs.forEach(function(blog) { %>
-                            <option value="<%= blog.id %>" <%= settings.selectedBlogId === blog.id ? 'selected' : '' %>><%= blog.name %> (<%= blog.url.split('//')[1].split('/')[0] %>)</option>
+                            <option value="<%= blog.id %>" <%= settings.selectedBlogId === blog.id ? 'selected' : '' %>><%= blog.name %> (<%= blog.url ? blog.url.replace(/^https?:\/\//, '').split('/')[0] : 'no url' %>)</option>
                         <% }); %>
                     </select>
                     <input type="hidden" name="_method" value="PUT"> <!-- For method-override -->
@@ -182,11 +177,11 @@
                     </div>
                     <div class="form-group">
                         <label for="seoKeywords">SEO Keywords (comma-separated):</label>
-                        <input type="text" id="seoKeywords" name="seoKeywords" value="<%= settings.seoKeywords.join(', ') %>" placeholder="AI, Machine Learning, future of tech">
+                        <input type="text" id="seoKeywords" name="seoKeywords" value="<%= (settings.seoKeywords || []).join(', ') %>" placeholder="AI, Machine Learning, future of tech">
                     </div>
                     <div class="form-group">
                         <label for="ppcTargetLinks">PPC Target Links (one per line):</label>
-                        <textarea id="ppcTargetLinks" name="ppcTargetLinks" placeholder="https://example.com/offer1\nhttps://example.com/offer2"><%= settings.ppcTargetLinks.join('\n') %></textarea>
+                        <textarea id="ppcTargetLinks" name="ppcTargetLinks" placeholder="https://example.com/offer1\nhttps://example.com/offer2"><%= (settings.ppcTargetLinks || []).join('\n') %></textarea>
                     </div>
                     <div class="form-group">
                         <label for="preferredAiProvider">Preferred AI Provider:</label>
@@ -215,9 +210,9 @@
                 <button type="submit" class="button-secondary">Run Pipeline Test Now</button>
             </form>
             <p><small>This will run the content generation process once immediately.</small></p>
-            <p class="api-status <%= apiConfig.grok.apiKey && apiConfig.image.apiKey && apiConfig.telegram.botToken && apiConfig.telegram.chatId ? 'ok' : 'warn' %>">
+            <p class="api-status <%= apiConfig.grok.apiKey && apiConfig.image.unsplashApiKey && apiConfig.telegram.botToken && apiConfig.telegram.chatId ? 'ok' : 'warn' %>">
                 API Key Status: <%= apiConfig.grok.apiKey ? 'Grok OK' : 'Grok MISSING' %> |
-                <%= apiConfig.image.apiKey ? 'Image API OK' : 'Image API MISSING' %> |
+                <%= apiConfig.image.unsplashApiKey ? 'Image API OK' : 'Image API MISSING' %> |
                 <%= apiConfig.telegram.botToken && apiConfig.telegram.chatId ? 'Telegram OK' : 'Telegram MISSING' %>
             </p>
         </div>
@@ -273,7 +268,7 @@
                                     <td style="padding: 8px; text-transform: capitalize;"><%= k.provider %></td>
                                     <td style="padding: 8px;"><%= k.label %></td>
                                     <td style="padding: 8px; font-family: monospace;">
-                                        <%= k.key.substring(0, 8) + '...' + k.key.substring(k.key.length - 4) %>
+                                        <%= k.key.length > 12 ? k.key.substring(0, 8) + '...' + k.key.substring(k.key.length - 4) : '********' %>
                                     </td>
                                     <td style="padding: 8px;">
                                         <span style="color: <%= k.isActive ? '#34d391' : '#f87171' %>;">
@@ -308,7 +303,7 @@
                 <% if (executionLogs && executionLogs.length > 0) { %>
                     <% executionLogs.forEach(function(log) { %>
                         <div class="log-item <%= log.status.toLowerCase() %>">
-                            <strong>[<%= log.timestamp.toLocaleString() %>]</strong> [<%= log.status %>] <strong><%= log.action %></strong>:
+                            <strong>[<%= new Date(log.timestamp).toLocaleString() %>]</strong> [<%= log.status %>] <strong><%= log.action %></strong>:
                             <% if (log.status === 'SUCCESS') { %>
                                 <% if (log.blogPostUrl) { %>
                                     <a href="<%= log.blogPostUrl %>" target="_blank"><%= log.blogPostUrl %></a>

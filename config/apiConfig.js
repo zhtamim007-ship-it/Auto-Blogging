@@ -1,13 +1,22 @@
 // config/apiConfig.js
 // Centralized configuration for external APIs
 
+require('dotenv').config();
+
 const apiConfig = {
     grok: {
         apiKey: process.env.GROK_API_KEY,
         apiUrl: process.env.GROK_API_URL || 'https://api.x.ai/v1/chat/completions', // Default if not set
-        model: 'grok-4.1 Fast', // Or 'grok-4' or equivalent
+        model: process.env.GROK_MODEL || 'grok-2-latest', // Must be a real model id accepted by the xAI API
         maxRetries: 3,
         retryDelay: 1000, // Initial delay in ms
+    },
+    gemini: {
+        apiKey: process.env.GEMINI_API_KEY,
+        apiUrl: process.env.GEMINI_API_URL || 'https://generativelanguage.googleapis.com/v1beta/models',
+        model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+        maxRetries: 3,
+        retryDelay: 1000,
     },
     blogger: {
         // Note: API keys are not typically used for Google APIs directly here
@@ -18,6 +27,8 @@ const apiConfig = {
         // Unsplash API requires access key
         unsplashApiUrl: 'https://api.unsplash.com/search/photos',
         unsplashApiKey: process.env.IMAGE_API_KEY,
+        // Alias kept so generic lookups (apiConfig[name].apiKey) and views work.
+        apiKey: process.env.IMAGE_API_KEY,
         // Pollinations.ai might use a key or be more open, adjust as needed
         pollinationsApiKey: process.env.POLLINATIONS_API_KEY, // Placeholder if needed
         pollinationsApiUrl: 'https://api.pollinations.ai/gpc/v1/jobs', // Example URL, adjust if necessary

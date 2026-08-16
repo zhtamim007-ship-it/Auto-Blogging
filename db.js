@@ -6,20 +6,44 @@ dotenv.config();
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
-if (!MONGODB_URI) {
-    console.error('FATAL ERROR: MONGODB_URI is not defined in .env file.');
-    process.exit(1);
-}
+let connectionPromise = null;
 
 const connectDB = async () => {
-    try {
-        await mongoose.connect(MONGODB_URI);
-        console.log('MongoDB Connected successfully.');
-    } catch (err) {
-        console.error('MongoDB Connection Error:', err.message);
-        process.exit(1);
+    if (!MONGODB_URI) {
+        // Do not kill the process: the HTTP server must stay up so the platform
+        // health check passes and the misconfiguration is visible in the logs.
+        const msg = 'MONGODB_URI is not defined. Set it in your environment variables.';
+        console.error(`CONFIG ERROR: ${msg}`);
+        throw new Error(msg);
     }
+
+    if (connectionPromise) return connectionPromise;
+
+    mongoose.set('strictQuery', true);
+
+    connectionPromise = mongoose
+        .connect(MONGODB_URI, {
+            serverSelectionTimeoutMS: 10000,
+        })
+        .then((conn) => {
+            console.log('MongoDB Connected successfully.');
+            return conn;
+        })
+        .catch((err) => {
+            connectionPromise = null;
+            console.error('MongoDB Connection Error:', err.message);
+            throw err;
+        });
+
+    return connectionPromise;
 };
+
+mongoose.connection.on('disconnected', () => {
+    console.warn('MongoDB disconnected. Mongoose will attempt to reconnect.');
+});
+mongoose.connection.on('error', (err) => {
+    console.error('MongoDB runtime error:', err.message);
+});
 
 // --- Schemas Definition ---
 
@@ -70,7 +94,8 @@ const articleIndexSchema = new mongoose.Schema({
     contentSummary: { type: String, required: true },
     tags: { type: [String], required: false, index: true },
     publishedAt: { type: Date, required: true, index: true },
-    blogId: { type: String, required: true, index: true }
+    blogId: { type: String, required: true, index: true },
+    postId: { type: String, required: false, index: true }
 }, { timestamps: true });
 
 // ApiKey Schema for managing multiple API keys per provider

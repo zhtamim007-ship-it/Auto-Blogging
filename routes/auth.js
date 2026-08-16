@@ -4,7 +4,7 @@ const router = express.Router();
 const googleAuth = require('../config/googleAuth');
 const { AuthToken, Settings } = require('../db');
 const { google } = require('googleapis');
-const { logExecution } = require('../services/apiService'); // Import logging utility
+const { logExecution, isTokenExpiring } = require('../services/apiService'); // Import logging utility
 
 // Route to initiate Google OAuth login
 router.get('/login', async (req, res) => {
@@ -26,7 +26,8 @@ router.get('/callback', async (req, res) => {
 
     try {
         // 1. Exchange authorization code for tokens
-        const { tokens } = await googleAuth.getToken(code);
+        // googleAuth.getToken() already unwraps and returns the tokens object.
+        const tokens = await googleAuth.getToken(code);
         console.log('Received OAuth tokens.');
 
         // 2. Save/Update AuthToken in the database
@@ -37,8 +38,9 @@ router.get('/callback', async (req, res) => {
         if (authToken) {
             // Update existing token
             authToken.accessToken = tokens.access_token;
-            authToken.refreshToken = tokens.refresh_token;
-            authToken.tokenExpiry = new Date(tokens.expiry_date);
+            // Google only returns a refresh token on first consent — keep the old one.
+            if (tokens.refresh_token) authToken.refreshToken = tokens.refresh_token;
+            authToken.tokenExpiry = new Date(tokens.expiry_date || Date.now() + 3600 * 1000);
             await authToken.save();
             console.log('AuthToken updated successfully.');
         } else {
@@ -46,8 +48,8 @@ router.get('/callback', async (req, res) => {
             authToken = new AuthToken({
                 userId: userId,
                 accessToken: tokens.access_token,
-                refreshToken: tokens.refresh_token,
-                tokenExpiry: new Date(tokens.expiry_date),
+                refreshToken: tokens.refresh_token || '',
+                tokenExpiry: new Date(tokens.expiry_date || Date.now() + 3600 * 1000),
                 blogsList: [], // Will be populated next
             });
             await authToken.save();
@@ -109,39 +111,30 @@ router.get('/callback', async (req, res) => {
 // Route to resync blogs if user wants to update their blog list
 router.post('/resync-blogs', async (req, res) => {
     try {
-        let authToken = await AuthToken.findOne({ userId: 'currentUser' }); // Assuming 'currentUser'
+        const authToken = await AuthToken.findOne({ userId: 'currentUser' });
         if (!authToken) {
             return res.redirect('/auth/login'); // Not authenticated
         }
 
-        // Re-authenticate to get a fresh token if needed and set credentials
         googleAuth.setCredentials({
             access_token: authToken.accessToken,
             refresh_token: authToken.refreshToken,
             expiry_date: (new Date(authToken.tokenExpiry)).getTime(),
         });
 
-        // Ensure the client is valid
+        if (isTokenExpiring(googleAuth.oauth2Client)) {
+            const { credentials } = await googleAuth.oauth2Client.refreshAccessToken();
+            authToken.accessToken = credentials.access_token;
+            if (credentials.refresh_token) authToken.refreshToken = credentials.refresh_token;
+            authToken.tokenExpiry = new Date(credentials.expiry_date);
+            googleAuth.setCredentials(credentials);
+        }
+
         const blogger = google.blogger({ version: 'v3', auth: googleAuth.oauth2Client });
 
         console.log('Resyncing blogs...');
         const blogsResponse = await blogger.blogs.listByUser({ userId: 'me' });
         const blogs = blogsResponse.data.items || [];
-
-        if (blogs.length === 0) {
-            authToken.blogsList = [];
-            await authToken.save();
-            return res.status(400).render('admin', {
-                pageTitle: 'Admin Dashboard',
-                settings: {}, // Fetch settings to show partial state
-                blogs: [],
-                selectedBlogDetails: null,
-                message: 'No blogs found. Blog list cleared.',
-                error: true,
-                apiConfig: require('../config/apiConfig'), // Pass apiConfig to view
-                executionLogs: [] // Fetch logs
-            });
-        }
 
         authToken.blogsList = blogs.map(blog => ({
             id: blog.id,
@@ -149,48 +142,25 @@ router.post('/resync-blogs', async (req, res) => {
             url: blog.url,
         }));
         await authToken.save();
-        console.log(`Resynced and saved ${blogs.length} blogs.`);
 
-        // Fetch current settings to re-render admin page
-        const settings = await Settings.findOne({}) || {}; // Assuming single settings document
-        const selectedBlogDetails = blogs.find(b => b.id === settings.selectedBlogId);
+        if (blogs.length === 0) {
+            await logExecution('FAILED', 'Resync Blogs', 'No blogs found for this Google account.');
+            return res.redirect('/admin?error=true&message=' + encodeURIComponent('No blogs found for this Google account.'));
+        }
 
-        res.render('admin', {
-            pageTitle: 'Admin Dashboard',
-            settings: settings,
-            blogs: authToken.blogsList,
-            selectedBlogDetails: selectedBlogDetails,
-            message: 'Blogs re-synced successfully!',
-            error: false,
-            apiConfig: require('../config/apiConfig'),
-            executionLogs: [] // Fetch logs
-        });
+        await logExecution('SUCCESS', 'Resync Blogs', null, null, { count: blogs.length });
+        // Redirect instead of rendering: the admin view needs locals (logs, API keys)
+        // that only the /admin route assembles.
+        res.redirect('/admin?message=' + encodeURIComponent(`Re-synced ${blogs.length} blog(s).`));
 
     } catch (error) {
-        console.error('Error resyncing blogs:', error);
-        logExecution('FAILED', 'Resync Blogs', `Error resyncing blogs: ${error.message}`, null, { error: error.message, stack: error.stack });
-        // Handle token expiry/invalidity
+        console.error('Error resyncing blogs:', error.message);
+        logExecution('FAILED', 'Resync Blogs', `Error resyncing blogs: ${error.message}`, null, { error: error.message });
         if (error.message.includes('invalid_grant') || error.message.includes('invalid_request')) {
             return res.redirect('/auth/login'); // Prompt to re-authenticate
         }
-        // Render admin page with error message
-        const settings = await Settings.findOne({}) || {};
-        const authToken = await AuthToken.findOne({ userId: 'currentUser' });
-        const blogs = authToken ? authToken.blogsList : [];
-        const selectedBlogDetails = blogs.find(b => b.id === settings.selectedBlogId);
-
-        res.render('admin', {
-            pageTitle: 'Admin Dashboard',
-            settings: settings,
-            blogs: blogs,
-            selectedBlogDetails: selectedBlogDetails,
-            message: `Failed to resync blogs: ${error.message}`,
-            error: true,
-            apiConfig: require('../config/apiConfig'),
-            executionLogs: [] // Fetch logs
-        });
+        res.redirect('/admin?error=true&message=' + encodeURIComponent(`Failed to resync blogs: ${error.message}`));
     }
 });
-
 
 module.exports = router;

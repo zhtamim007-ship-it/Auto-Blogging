@@ -3,6 +3,7 @@ const axios = require('axios');
 const apiConfig = require('../config/apiConfig');
 const { ExecutionLog } = require('../db');
 const { v4: uuidv4 } = require('uuid'); // For unique request IDs
+const googleAuth = require('../config/googleAuth'); // Used for OAuth-protected calls
 
 // --- Logging Utility ---
 async function logExecution(status, action, errorMessage = null, blogPostUrl = null, details = {}) {
@@ -57,6 +58,21 @@ async function sendTelegramAlert(message) {
     }
 }
 
+// --- Token expiry helper ---
+// `isTokenExpiring()` is an internal google-auth-library method that is not part
+// of the public contract and is missing in some versions. This wrapper is safe.
+function isTokenExpiring(oauth2Client, skewMs = 5 * 60 * 1000) {
+    try {
+        if (typeof oauth2Client.isTokenExpiring === 'function') {
+            return oauth2Client.isTokenExpiring();
+        }
+    } catch (_) { /* fall through to manual check */ }
+
+    const expiry = oauth2Client?.credentials?.expiry_date;
+    if (!expiry) return true; // Unknown expiry -> assume a refresh is required
+    return Date.now() >= expiry - skewMs;
+}
+
 // --- Generic API Call with Retry Logic ---
 async function makeApiRequest(options) {
     const {
@@ -100,7 +116,7 @@ async function makeApiRequest(options) {
             // For now, assuming tokens are set globally or passed in.
             // If not passed, we'd need to retrieve them from DB and ensure they are fresh.
             // For simplicity, let's assume googleAuth.oauth2Client is already configured.
-             if (!googleAuth.oauth2Client.credentials || googleAuth.oauth2Client.isTokenExpiring()) {
+             if (!googleAuth.oauth2Client.credentials || isTokenExpiring(googleAuth.oauth2Client)) {
                  // Attempt to refresh if not set or expiring (requires a valid refresh token in oauth2Client)
                  // This part is crucial and assumes oauth2Client has a valid refresh token set.
                  // In a real scenario, you'd retrieve from DB and set it.
@@ -122,12 +138,13 @@ async function makeApiRequest(options) {
 
 
     let finalUrl = apiUrl; // Start with the base API URL
+    let currentUrl = finalUrl; // Declared here so the catch block can reference it
 
     while (retries > 0) {
         attempt++;
         try {
             // Dynamically construct URL if query parameters are needed (like for Unsplash)
-            let currentUrl = finalUrl;
+            currentUrl = finalUrl;
             if (options.queryParams) {
                 const queryParams = new URLSearchParams(options.queryParams).toString();
                 currentUrl = `${finalUrl}?${queryParams}`;
@@ -157,7 +174,7 @@ async function makeApiRequest(options) {
             // Specific handling for common API errors
             if (errorCode === 401) { // Unauthorized
                 // Potentially refresh token for Google APIs or handle API key issues
-                if (isAuthRequired && googleAuth.oauth2Client.isTokenExpiring()) {
+                if (isAuthRequired && isTokenExpiring(googleAuth.oauth2Client)) {
                      console.log('Attempting to refresh Google token after 401...');
                      try {
                          const { credentials } = await googleAuth.oauth2Client.refreshAccessToken();
@@ -225,4 +242,5 @@ module.exports = {
     makeApiRequest,
     logExecution,
     sendTelegramAlert,
+    isTokenExpiring,
 };
