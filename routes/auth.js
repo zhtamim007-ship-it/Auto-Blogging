@@ -6,16 +6,60 @@ const { AuthToken, Settings } = require('../db');
 const { google } = require('googleapis');
 const { logExecution, isTokenExpiring } = require('../services/apiService'); // Import logging utility
 
+// Diagnostics: shows the exact redirect URI this deployment will send to Google,
+// so it can be pasted into Google Cloud Console → Authorised redirect URIs.
+router.get('/status', (req, res) => {
+    res.json(googleAuth.getConfigStatus(req));
+});
+
 // Route to initiate Google OAuth login
 router.get('/login', async (req, res) => {
-    const authUrl = googleAuth.generateAuthUrl();
-    console.log('Redirecting to Google OAuth:', authUrl);
-    res.redirect(authUrl);
+    const status = googleAuth.getConfigStatus(req);
+
+    if (!status.ready) {
+        const msg =
+            'Google sign-in is not configured yet. Missing: ' + status.missing.join(', ') + '. ' +
+            'Set these environment variables (Render → Environment) and redeploy.';
+        console.error(msg);
+        logExecution('FAILED', 'Google Auth Login', msg);
+        return res.status(500).render('oauth-error', {
+            pageTitle: 'Google Sign-in Not Configured',
+            message: msg,
+            status,
+            suggestedRedirectUri:
+                status.redirectUri ||
+                googleAuth.normalizeRedirectUri(`${req.protocol}://${req.get('host')}`) ||
+                'https://your-app-name.onrender.com/auth/callback',
+        });
+    }
+
+    try {
+        const authUrl = googleAuth.generateAuthUrl(req);
+        console.log('Redirecting to Google OAuth with redirect_uri:', status.redirectUri);
+        res.redirect(authUrl);
+    } catch (error) {
+        console.error('Failed to build Google OAuth URL:', error.message);
+        logExecution('FAILED', 'Google Auth Login', error.message);
+        res.status(500).render('oauth-error', {
+            pageTitle: 'Google Sign-in Error',
+            message: error.message,
+            status,
+            suggestedRedirectUri: status.redirectUri || '',
+        });
+    }
 });
 
 // Callback route to handle Google's response
 router.get('/callback', async (req, res) => {
-    const { code } = req.query;
+    const { code, error: googleError } = req.query;
+
+    // Google can return ?error=access_denied etc. instead of a code.
+    if (googleError) {
+        const errorMsg = `Google returned an authorization error: ${googleError}`;
+        console.error(errorMsg);
+        logExecution('FAILED', 'Google Auth Callback', errorMsg);
+        return res.status(400).render('select-blog', { message: errorMsg, error: true, blogs: [], settings: {} });
+    }
 
     if (!code) {
         const errorMsg = 'Authorization code not received.';
@@ -25,9 +69,9 @@ router.get('/callback', async (req, res) => {
     }
 
     try {
-        // 1. Exchange authorization code for tokens
-        // googleAuth.getToken() already unwraps and returns the tokens object.
-        const tokens = await googleAuth.getToken(code);
+        // 1. Exchange authorization code for tokens using the SAME redirect_uri
+        // that was sent to the consent screen (Google rejects any mismatch).
+        const tokens = await googleAuth.getToken(code, req);
         console.log('Received OAuth tokens.');
 
         // 2. Save/Update AuthToken in the database
@@ -99,6 +143,17 @@ router.get('/callback', async (req, res) => {
         const errorMsg = `Error during Google OAuth callback: ${error.message}`;
         console.error(errorMsg, error.stack);
         logExecution('FAILED', 'Google Auth Callback', errorMsg, null, { error: error.message, stack: error.stack });
+
+        if (error.code === 'GOOGLE_OAUTH_NOT_CONFIGURED' || /redirect_uri/i.test(error.message)) {
+            const status = googleAuth.getConfigStatus(req);
+            return res.status(500).render('oauth-error', {
+                pageTitle: 'Google Sign-in Configuration Error',
+                message: error.message,
+                status,
+                suggestedRedirectUri: status.redirectUri || '',
+            });
+        }
+
         // Handle token refresh issues or other errors
         if (error.message.includes('invalid_grant') || error.message.includes('invalid_request')) {
             // If the token is invalid or expired, prompt user to re-authenticate

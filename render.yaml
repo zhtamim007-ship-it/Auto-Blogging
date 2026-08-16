@@ -20,6 +20,10 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+      # Must match an "Authorised redirect URI" on your Google OAuth client,
+      # e.g. https://<your-service>.onrender.com/auth/callback
+      # If omitted, the app auto-detects it (RENDER_EXTERNAL_URL → request host);
+      # visit /auth/status to see the value actually being sent to Google.
       - key: GOOGLE_CALLBACK_URL
         sync: false
       - key: GROK_API_KEY
